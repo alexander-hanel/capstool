@@ -1,7 +1,7 @@
 ## Description 
 capstools is a set of functions that can be used to do basic static analysis of x86/x64 instructions. The tool uses the [Capstone Engine](http://www.capstone-engine.org/) to disassembly binary data. The intent of this project is to be able to traverse binary data/instructions to do basic binary analysis on memory dumps, binary data, etc. The function naming convention is the same as [IDAPython](https://github.com/idapython/src) but only a very _small_ subset of functions have been implemented. 
 
-This project is a work in progress. I'm still fixing errors as I find them.  
+This project is a work in progress. I'm still fixing errors and adding new functions. 
 
 ## Usage
 
