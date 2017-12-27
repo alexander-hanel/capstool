@@ -3,6 +3,9 @@ import hashlib
 from capstone import *
 from capstone.x86 import *
 
+ASCII = 1
+WIDECHAR = 2
+
 
 class CapsTool:
     """
@@ -30,6 +33,7 @@ class CapsTool:
             self.data = self.pe.sections[0].get_data()
         else:
             self.pe = None
+
 
     def fo(self, value):
         """
@@ -314,6 +318,29 @@ class CapsTool:
                     return ea - size
         return self.BADADDR
 
+    def get_strlit_contents(self, ea, length=None, strtype=ASCII):
+        """
+        previously known as GetString, returns
+        :param ea: address/offset to start reading from
+        :param length: length of the string to read
+        :param strtype: ASCII = 1 or WIDECHAR = 2
+        :return: strings in ASCII format (even if unicode) IDA seems to do the same
+        """
+        if self.pe:
+            temp_data = self.pe_data
+        else:
+            temp_data = self.data
+        if length and strtype == WIDECHAR:
+            return temp_data[ea:ea+length][::2]
+        elif length and strtype == ASCII:
+            temp = temp_data[ea:ea + length]
+            return temp.split("\x00")[0]
+        if strtype == ASCII:
+            # rely on Python to return str
+            return temp_data[ea:].split("\x00")[0]
+        elif strtype == WIDECHAR:
+            temp_data = temp_data[ea:].split("\x00\x00")[0]
+            return temp_data[::2]
 
     def _start_heuristic(self, ea):
         """
@@ -333,10 +360,11 @@ class CapsTool:
         addr_list = []
         for (address, size, mnemonic, op_str) in self.md.disasm_lite(temp_buffer,0):
             addr_list.append(address)
-        ea_addr_index = addr_list.index( ea - offset)
-        displ = addr_list[ea_addr_index] - addr_list[ea_addr_index - 1]
-        if displ >= 0:
-            self._prev_addr_displacement = displ
+        if (ea - offset) in addr_list:
+            ea_addr_index = addr_list.index( ea - offset)
+            displ = addr_list[ea_addr_index] - addr_list[ea_addr_index - 1]
+            if displ >= 0:
+                self._prev_addr_displacement = displ
 
 
 # the below are functions that could be implemented or just a todo list.
