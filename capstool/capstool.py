@@ -16,7 +16,8 @@ class CapsTool:
         self.pe_data = None
         self.MAX_BYTE_SIZE = 15
         self.BADADDR = 0xffffffffffffffff
-        if bit == 32:
+        self.bit = bit
+        if self.bit == 32:
             self.md = Cs(CS_ARCH_X86, CS_MODE_32)
         else:
             self.md = Cs(CS_ARCH_X86, CS_MODE_64)
@@ -33,7 +34,6 @@ class CapsTool:
             self.data = self.pe.sections[0].get_data()
         else:
             self.pe = None
-
 
     def fo(self, value):
         """
@@ -337,7 +337,8 @@ class CapsTool:
             return temp.split("\x00")[0]
         if strtype == ASCII:
             # rely on Python to return str
-            return temp_data[ea:].split("\x00")[0]
+            temp = temp_data[ea:]
+            return temp.split("\x00")[0]
         elif strtype == WIDECHAR:
             temp_data = temp_data[ea:].split("\x00\x00")[0]
             return temp_data[::2]
@@ -704,6 +705,7 @@ class CapsTool:
 # # ASCSTR_ULEN4   = ida_nalt.ASCSTR_ULEN4   # Pascal-style Unicode, length is 4 bytes
 # # ASCSTR_LAST    = ida_nalt.ASCSTR_LAST    # Last string type
 #
+#  TODO: Completed
 # # def GetString(ea, length = -1, strtype = ASCSTR_C):
 #     # """
 #     # Get string contents
