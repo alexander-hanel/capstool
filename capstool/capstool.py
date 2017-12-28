@@ -31,13 +31,15 @@ class CapsTool:
             self.pe = pefile.PE(data=self.data)
             # read .text section into data
             self.pe_data = self.data
-            self.data = self.pe.sections[0].get_data()
+            for index, section in enumerate(self.pe.sections):
+                if ".text\x00" in section.name:
+                    self.data = self.pe.sections[index].get_data()
         else:
             self.pe = None
 
     def fo(self, value):
         """
-        Convert virtual address to file on disk
+        Convert virtual address to file on diskcd
         :param value: virtual address
         :return:
         """
@@ -312,8 +314,7 @@ class CapsTool:
             for (address, size, mnemonic, op_str) in self.md.disasm_lite(code, 0, 1):
                 # if dism size is the next ea then return size.
                 # this technique fails if the bytes contain memory addresses, for example
-                # 0x3c mov dword ptr [0x40a2e0], eax 0x37; the addr 0x40a2e0 adds more complications
-                # 0x41 call 0x3f9c 0x3b ; prev_addr
+                # "mov dword ptr [0x40a2e0]" the addr 0x40a2e0 adds more complications
                 if ea - offset + size == ea:
                     return ea - size
         return self.BADADDR
