@@ -13,6 +13,7 @@ class CapsTool:
     """
     def __init__(self, data, bit=32):
         self.data = data
+        self.last_error = None
         self.pe_data = None
         self.MAX_BYTE_SIZE = 15
         self.BADADDR = 0xffffffffffffffff
@@ -28,12 +29,15 @@ class CapsTool:
     def _is_pe(self):
         if self.data[:2] == "MZ":
             import pefile
-            self.pe = pefile.PE(data=self.data)
-            # read .text section into data
-            self.pe_data = self.data
-            for index, section in enumerate(self.pe.sections):
-                if ".text\x00" in section.name:
-                    self.data = self.pe.sections[index].get_data()
+            try:
+                self.pe = pefile.PE(data=self.data)
+                # read .text section into data
+                self.pe_data = self.data
+                for index, section in enumerate(self.pe.sections):
+                    if ".text\x00" in section.Name:
+                        self.data = self.pe.sections[index].get_data()
+            except Exception as e:
+                self.last_error = e
         else:
             self.pe = None
 
@@ -43,7 +47,7 @@ class CapsTool:
         :param value: virtual address
         :return:
         """
-        if isinstance(value, int):
+        if isinstance(value, int) and self.pe:
             return self.pe.get_offset_from_rva(value - self.pe.OPTIONAL_HEADER.ImageBase)
         return None
 
