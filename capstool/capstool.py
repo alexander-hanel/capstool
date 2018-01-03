@@ -103,8 +103,8 @@ class CapsTool:
 
     def get_input_sha256(self):
         """
-        Return the MD5 hash of the input binary file
-        @return: MD5 string or None on error
+        Return the sha256 hash of the input binary file
+        @return: sha256 string or None on error
         """
         return hashlib.sha256(self.data).hexdigest()
 
