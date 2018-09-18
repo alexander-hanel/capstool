@@ -34,7 +34,7 @@ class CapsTool:
                 # read .text section into data
                 self.pe_data = self.data
                 for index, section in enumerate(self.pe.sections):
-                    if ".text\x00" in section.Name:
+                    if ".text\x00" in section.Name or ".code\x00" in section.Name:
                         self.data = self.pe.sections[index].get_data()
             except Exception as e:
                 self.last_error = e
