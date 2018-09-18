@@ -36,6 +36,7 @@ class CapsTool:
                 for index, section in enumerate(self.pe.sections):
                     if ".text\x00" in section.Name or ".code\x00" in section.Name:
                         self.data = self.pe.sections[index].get_data()
+                        self.sect_va = self.pe.sections[index].VirtualAddress
             except Exception as e:
                 self.last_error = e
         else:
