@@ -1,3 +1,4 @@
+import string
 import struct
 import hashlib
 from capstone import *
@@ -5,11 +6,17 @@ from capstone.x86 import *
 
 ASCII = 1
 WIDECHAR = 2
+MAX_INSTRU = 0xfff
+BCC = ["je", "jne", "js", "jns", "jp", "jnp", "jo", "jno", "jl", "jle", "jg",
+       "jge", "jb", "jbe", "ja", "jae", "jcxz", "jecxz", "jrcxz", "loop", "loopne",
+       "loope", "call", "lcall"]
+END = ["ret", "retn", "retf", "iret", "int3"]
+BNC = ["jmp", "jmpf", "ljmp"]
 
 
 class CapsTool:
     """
-    A class for storing the data to be disassembled
+    A class for storing the data to be disassembled.
     """
     def __init__(self, data, bit=32):
         self.data = data
@@ -27,6 +34,10 @@ class CapsTool:
         self._is_pe()
 
     def _is_pe(self):
+        """
+
+        :return:
+        """
         if self.data[:2] == "MZ":
             import pefile
             try:
@@ -41,6 +52,134 @@ class CapsTool:
                 self.last_error = e
         else:
             self.pe = None
+
+    def get_false_key(self, addr_bcc):
+        """
+        returns branch condition operand that has not been analyzed
+        :param addr_bcc: dict of {addr:True|False}
+        :return:
+        """
+        for key in addr_bcc:
+            if addr_bcc[key] is False:
+                return True, key
+        return False, None
+
+    def to_signed_32(self, n):
+        """
+        converts unsigned to signed 32bit int
+        :param n: unsigned 32 bit integer
+        :return:
+        """
+        n = n & 0xffffffff
+        return (n ^ 0x80000000) - 0x80000000
+
+    def to_signed_64(self, n):
+        """
+        converts unsigned to signed 64bit int
+        :param n: unsigned 64bit integer
+        :return:
+        """
+        n = n & 0xffffffffffffffff
+        return (n ^ 0x8000000000000000) - 0x8000000000000000
+
+    def get_op_dist(self, bit, addr):
+        """
+        returns operand dist as signed int
+        :param bit:
+        :param addr:
+        :return:
+        """
+        opp = self.get_operand_value(addr, 0)
+        # check if operand is a register or some other non-int value
+        op_dist  = None
+        if not isinstance(opp, int):
+            return False, op_dist
+        # convert to unsigned int based off of bit
+        elif bit == 32:
+            op_dist = self.to_signed_32(opp)
+        elif bit == 64:
+            op_dist = self.to_signed_64(opp)
+        return True, op_dist
+
+    def dis_addr(self, addr, bit, debug=False):
+        """
+        returns addresses of instructions dism with recursive descent
+        :param addr: address to start
+        :param bit: 32bit or 64bit
+        :param debug: print debug information
+        :return: list of addresses
+        """
+        visited = []
+        addr_bcc = {}
+        while True:
+            if len(visited) > MAX_INSTRU:
+                break
+            try:
+                instr = self.get_mnem(addr)
+            except Exception as e:
+                print e
+                break
+            if debug:
+                print hex(addr), instr, addr_bcc # , [hex(x) for x in visited]
+            if addr in addr_bcc:
+                if addr_bcc[addr] is False:
+                    addr_bcc[addr] = True
+                else:
+                    status, t_addr = self.get_false_key(addr_bcc)
+                    if status:
+                        addr = t_addr
+                        continue
+                    else:
+                        break
+            if instr is None or self.dword(addr) == 0x0:
+                status, t_addr = self.get_false_key(addr_bcc)
+                if status:
+                    addr = t_addr
+                    continue
+                else:
+                    break
+            if addr not in visited:
+                visited.append(addr)
+            if instr in BNC:
+                status, op_dist = self.get_op_dist(bit, addr)
+                if status:
+                    addr = addr + op_dist
+                    if addr in visited:
+                        if addr in addr_bcc:
+                            if addr_bcc[addr] is False:
+                                addr_bcc[addr] = True
+                        else:
+                            addr_bcc[addr] = False
+                        status, t_addr = self.get_false_key(addr_bcc)
+                        if status:
+                            addr = t_addr
+                            continue
+                    continue
+            elif instr in BCC:
+                if self.word(addr) != 0x15ff:
+                    status, op_dist = self.get_op_dist(bit, addr)
+                    if status:
+                        cal_addr = addr + op_dist
+                        if cal_addr not in addr_bcc:
+                            if cal_addr not in visited:
+                                addr_bcc[cal_addr] = False
+                        if self.byte(cal_addr - 1) == 0x00:
+                            temp_data = self.get_many_bytes(addr + 5, op_dist - 6)
+                            if temp_data:
+                                if all(c in string.printable for c in temp_data):
+                                    status, t_addr = self.get_false_key(addr_bcc)
+                                    if status:
+                                        addr = t_addr
+                                        continue
+            elif instr in END:
+                status, t_addr = self.get_false_key(addr_bcc)
+                if status:
+                    addr = t_addr
+                    continue
+                else:
+                    break
+            addr = self.next_head(addr)
+        return visited
 
     def fo(self, value):
         """
