@@ -7,11 +7,11 @@ from capstone.x86 import *
 ASCII = 1
 WIDECHAR = 2
 MAX_INSTRU = 0xfff
-BCC = ["je", "jne", "js", "jns", "jp", "jnp", "jo", "jno", "jl", "jle", "jg",
-       "jge", "jb", "jbe", "ja", "jae", "jcxz", "jecxz", "jrcxz", "loop", "loopne",
-       "loope", "call", "lcall"]
+BCC = ["je", "jne", "js", "jns", "jp", "jnp", "jo", "jno", "jl", "jle", "jg",  "jge", "jb", "jbe", "ja", "jae", "jcxz",
+       "jecxz", "jrcxz", "loop", "loopne", "loope", "call", "lcall"]
 END = ["ret", "retn", "retf", "iret", "int3"]
 BNC = ["jmp", "jmpf", "ljmp"]
+CALL = ["call", "lcall"]
 
 
 class CapsTool:
@@ -31,21 +31,42 @@ class CapsTool:
             self.md = Cs(CS_ARCH_X86, CS_MODE_64)
         self.md.detail = True
         self._prev_addr_displacement = self.BADADDR
-        self._is_pe()
+        self._is_pe() # this is kind of junk. TODO: revist
+
+    class BLOCK(object):
+        def __init__(self):
+            self.start_ea = None  # start of the basic block
+            self.end_ea = None  # end of the basic block
+            self.id = None  # id of the basic block
+            self.preds = None  # basic blocks that might execute before reaching this basic block.
+            self.succs = None  # basic blocks that might execute after current basic block.
+
+    class FUNCTION(object):
+        def __init__(self):
+            self.start_ea = None
+            self.end_ea = None
+            self.size = None
+            self.id = None
+
+        def find_prologue(self):
+            pass
+
+        def find_epilogue(self):
+            pass
 
     def _is_pe(self):
         """
 
         :return:
         """
-        if self.data[:2] == "MZ":
+        if self.data[:2] == b"MZ":
             import pefile
             try:
                 self.pe = pefile.PE(data=self.data)
                 # read .text section into data
                 self.pe_data = self.data
                 for index, section in enumerate(self.pe.sections):
-                    if ".text\x00" in section.Name or ".code\x00" in section.Name:
+                    if b".text\x00" in section.Name or b".code\x00" in section.Name:
                         self.data = self.pe.sections[index].get_data()
                         self.sect_va = self.pe.sections[index].VirtualAddress
             except Exception as e:
@@ -56,6 +77,7 @@ class CapsTool:
     def get_false_key(self, addr_bcc):
         """
         returns branch condition operand that has not been analyzed
+        helper function
         :param addr_bcc: dict of {addr:True|False}
         :return:
         """
@@ -107,7 +129,7 @@ class CapsTool:
         :param addr: address to start
         :param bit: 32bit or 64bit
         :param debug: print debug information
-        :return: list of addresses
+        :return: list of unsorted addresses
         """
         visited = []
         addr_bcc = {}
@@ -117,10 +139,10 @@ class CapsTool:
             try:
                 instr = self.get_mnem(addr)
             except Exception as e:
-                print e
+                print(e)
                 break
             if debug:
-                print hex(addr), instr, addr_bcc # , [hex(x) for x in visited]
+                print(hex(addr), instr, addr_bcc) # , [hex(x) for x in visited]
             if addr in addr_bcc:
                 if addr_bcc[addr] is False:
                     addr_bcc[addr] = True
@@ -154,7 +176,7 @@ class CapsTool:
                         if status:
                             addr = t_addr
                             continue
-                    continue
+
             elif instr in BCC:
                 if self.word(addr) != 0x15ff:
                     status, op_dist = self.get_op_dist(bit, addr)
@@ -181,6 +203,97 @@ class CapsTool:
             addr = self.next_head(addr)
         return visited
 
+    def flowchart(self, func):
+        """
+
+        :param func:
+        :return:
+        """
+        blocks = []
+        pass
+
+    def get_basic_blocks(self, start, end, base=0, debug=False):
+        """
+
+        :param start:
+        :param end:
+        :return:
+        """
+        # TODO add more attributes to the loop (e.g. dominators, etc)
+        leaders = set([])
+        leaders.add(start)
+        basic_blocks = []
+        curr_addr = start
+        visited = []
+        while curr_addr < end:
+            visited.append(curr_addr)
+            # ensure infinite loop doesn't occur
+            if len(visited) > MAX_INSTRU:
+                return None
+            try:
+                instr = self.get_mnem(curr_addr)
+            except Exception as e:
+                print("ERROR: Accessing mnemonic for basic block: %s" % e)
+                break
+            # is mnemonic branch non-conditional or conditional
+            if (instr in BNC or instr in BCC) and instr not in CALL:
+                target_addr = self.get_operand_value(curr_addr, 0)
+                # skip instructions in which the branch successor is a register (eax)
+                if isinstance(target_addr, str):
+                    curr_addr = self.next_head(curr_addr)
+                    continue
+                if debug:
+                    print("0x%x, %s, 0x%x" % (curr_addr, self.get_disasm(curr_addr), target_addr))
+                leaders.add(target_addr)
+                temp_addr = self.next_head(curr_addr)
+                if temp_addr is not None or temp_addr < end:
+                    leaders.add(self.next_head(curr_addr))
+            elif instr in END:
+                prev = self.prev_head(curr_addr)
+                prev_inst = self.get_mnem(prev)
+
+                """
+                This logic handles the following use case 
+                004010cf  b800000000         mov     eax, 0x0
+                004010d4  4885c0             test    rax, rax
+                004010d7  7407               je      0x4010e0
+
+                004010d9  bf30404000         mov     edi, 0x404030
+                004010de  ffe0               jmp     rax  
+                004010e0  c3                 retn    
+                """
+                if prev_inst in BNC and self.get_operand_type(prev_inst, 0) == X86_OP_REG:
+                    tt_next = self.next_head(curr_addr)
+                    if tt_next != end:
+                        leaders.add(curr_addr)
+                        leaders.add(tt_next)
+
+            # is mnemonic end instruction
+            curr_addr = self.next_head(curr_addr)
+
+        # calculate block boundaries
+        leaders = sorted(leaders)
+        print([hex(x+base) for x  in leaders])
+        for ii, vv in enumerate(leaders[:-1]):
+            try:
+                tt = visited.index(leaders[ii+1])
+                start = vv
+                end = visited[tt]
+            except:
+                # TODO: revist this code looks like made up logic
+                start = vv
+                end = leaders[-1]
+            block = {}
+            block["start"] = start + base
+            block["end"] = end + base
+            block["id"] = ii
+            basic_blocks.append(block)
+        if debug:
+            for ii in leaders:
+                print(hex(ii))
+        return basic_blocks
+
+
     def fo(self, value):
         """
         Convert virtual address to file on diskcd
@@ -199,7 +312,7 @@ class CapsTool:
         @param n: the operand number
         @return: value
         """
-        for insn in self.md.disasm(self.data[ea:], 0, 1):
+        for insn in self.md.disasm(self.data[ea:], ea, 1):
             if len(insn.operands) >= n:
                 for c, i in enumerate(insn.operands):
                     if c == n:
@@ -207,8 +320,6 @@ class CapsTool:
                             return insn.reg_name(i.reg)
                         if i.type == X86_OP_IMM:
                             return i.imm
-                        if i.type == X86_OP_FP:
-                            return i.fp
                         if i.type == X86_OP_MEM:
                             if i.mem.segment != 0:
                                 return insn.reg_name(i.mem.segment)
@@ -228,7 +339,7 @@ class CapsTool:
         :param n:
         :return:
         """
-        for insn in self.md.disasm(self.data[ea:], 0, 1):
+        for insn in self.md.disasm(self.data[ea:], ea, 1):
             if len(insn.operands) >= n:
                 for c, i in enumerate(insn.operands):
                     if c == n:
@@ -236,8 +347,6 @@ class CapsTool:
                             return X86_OP_REG
                         if i.type == X86_OP_IMM:
                             return X86_OP_IMM
-                        if i.type == X86_OP_FP:
-                            return X86_OP_FP
                         if i.type == X86_OP_MEM:
                             return X86_OP_MEM
 
@@ -360,7 +469,7 @@ class CapsTool:
         @note: this function may not return exactly the same mnemonics
                as you see on the screen.
         """
-        return self.get_disasm_ex(ea, 0)
+        return self.get_disasm_ex(ea)
 
     def get_disasm_ex(self, ea, flags=0):
         """
@@ -371,9 +480,9 @@ class CapsTool:
         @note: this function may not return exactly the same mnemonics
                as you see on the screen.
         """
-        code = self.data[ea : ea + self.MAX_BYTE_SIZE]
+        code = self.data[ea:ea + self.MAX_BYTE_SIZE]
         instru = ""
-        for i in self.md.disasm(code, 0):
+        for i in self.md.disasm(code, ea):
             instru = "%s %s" % (i.mnemonic, i.op_str)
             return instru
         else:
@@ -450,7 +559,7 @@ class CapsTool:
             return ea - self._prev_addr_displacement
 
         # backtrace byte by byte
-        for offset in xrange(self.MAX_BYTE_SIZE, 0, -1):
+        for offset in range(self.MAX_BYTE_SIZE, 0, -1):
             if ea - offset < 0:
                     continue
             # read 1 byte before ea, read 2 bytes before ea, read 3 bytes before ea, etc...
@@ -485,7 +594,7 @@ class CapsTool:
             temp = temp_data[ea:]
             return temp.split("\x00")[0]
         elif strtype == WIDECHAR:
-            temp_data = temp_data[ea:].split("\x00\x00")[0]
+            temp_data = temp_data[ea:].split(b"\x00\x00")[0]
             return temp_data[::2]
 
     def _start_heuristic(self, ea):
@@ -495,8 +604,8 @@ class CapsTool:
         :return:
         """
         temp_data = self.data[:ea+self.MAX_BYTE_SIZE]
-        func_pro = "\x55\x8B\xEC"
-        func_nop = "\x90"
+        func_pro = b"\x55\x8B\xEC"
+        func_nop = b"\x90"
         offset = temp_data.find(func_pro)
         if offset == -1:
             offset = temp_data.find(func_nop)

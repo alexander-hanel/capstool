@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name='capstool',
-    version='2.0',
+    version='3.0',
     packages=['capstool'],
     url='https://github.com/alexander-hanel/capstool',
     author='ahanel',
