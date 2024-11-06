@@ -7,13 +7,13 @@ This project is a work in progress. I'm still fixing errors and adding new funct
 
 ### Example usage
 ```
-from capstool import CapsTool
+from capstool.capstool import CapsTool
 data = open("example.bin", "rb").read()
 cs = CapsTool(data, 32)
 cur_addr = 0
 
 for x in range(0, 32):
-    print "0x%x\t%s"  % (cur_addr, cs.get_disasm(cur_addr))
+    print("0x%x\t%s"  % (cur_addr, cs.get_disasm(cur_addr)))
     cur_addr = cs.next_head(cur_addr)    
 ```
 For Portable Executable (PE) files capstool copies the `.text` section into a buffer using [pefile](https://github.com/erocarrera/pefile). capstool does not attempt to convert the relative virtual address (RVA) for offsets. If working with RVAs, a function named `object.fo` (short for file offset) can be used to return the raw address. 
